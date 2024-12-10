@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <chrono>
+#include <iostream>
 
 namespace param {
 const int n_steps = 200000;
@@ -103,6 +105,8 @@ int main(int argc, char** argv) {
     };
 
     // Problem 1
+    auto start_p1 = std::chrono::high_resolution_clock::now();
+
     double min_dist = std::numeric_limits<double>::infinity();
     read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
     for (int i = 0; i < n; i++) {
@@ -121,6 +125,8 @@ int main(int argc, char** argv) {
     }
 
     // Problem 2
+    auto start_p2 = std::chrono::high_resolution_clock::now();
+
     int hit_time_step = -2;
     read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
     for (int step = 0; step <= param::n_steps; step++) {
@@ -137,9 +143,93 @@ int main(int argc, char** argv) {
     }
 
     // Problem 3
-    // TODO
-    int gravity_device_id = -999;
-    double missile_cost = -999;
+    auto start_p3 = std::chrono::high_resolution_clock::now();
+
+    read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
+    int best_step = 400000;
+    int gravity_device_id = -1;
+
+    // Iterate through all gravity devices
+    for (int device_id = 0; device_id < n; ++device_id) {
+        if (type[device_id] != "device") continue;
+
+        // Backup initial state
+        std::vector<double> qx_copy = qx, qy_copy = qy, qz_copy = qz;
+        std::vector<double> vx_copy = vx, vy_copy = vy, vz_copy = vz;
+        std::vector<double> m_copy = m;
+
+        // Simulate with the device removed
+        m[device_id] = 0; // Destroy the device
+        bool collision_avoided = true;
+        int step_missile_hits = -1;
+        int step = 1;
+
+        // Simulate till the device destroyed
+        for (; step <= param::n_steps; ++step) {
+            run_step(step, n, qx, qy, qz, vx, vy, vz, m, type);
+
+            // Calculate the distance between the missile and the gravity device
+            double dist_planet_device = distance(planet, device_id);
+            double missile_distance = step * param::dt * param::missile_speed;
+            if (missile_distance > dist_planet_device && step_missile_hits == -1) {
+                step_missile_hits = step;
+                break;
+            }
+
+            // Check if asteroid hits the planet
+            double dx = qx[planet] - qx[asteroid];
+            double dy = qy[planet] - qy[asteroid];
+            double dz = qz[planet] - qz[asteroid];
+            if (dx * dx + dy * dy + dz * dz < param::planet_radius * param::planet_radius) {
+                collision_avoided = false;
+                break;
+            }
+        }
+
+        // collision happens before destroying the device
+        if (!collision_avoided)
+            continue;
+        m[device_id] = 0;
+
+        // Simulate with the device destroyed
+        for (step++ ; step <= param::n_steps; ++step) {
+            run_step(step, n, qx, qy, qz, vx, vy, vz, m, type);
+
+            // Check if asteroid hits the planet
+            double dx = qx[planet] - qx[asteroid];
+            double dy = qy[planet] - qy[asteroid];
+            double dz = qz[planet] - qz[asteroid];
+            if (dx * dx + dy * dy + dz * dz < param::planet_radius * param::planet_radius) {
+                collision_avoided = false;
+                break;
+            }
+        }
+
+        // Restore the initial state
+        qx = qx_copy;
+        qy = qy_copy;
+        qz = qz_copy;
+        vx = vx_copy;
+        vy = vy_copy;
+        vz = vz_copy;
+        m = m_copy;
+
+        if (collision_avoided && step_missile_hits != -1 && step_missile_hits < best_step) {
+            best_step = step_missile_hits;
+            gravity_device_id = device_id;
+        }
+    }
+
+    double missile_cost = (gravity_device_id == -1) ? 0 : param::get_missile_cost(best_step * param::dt);
+
+    auto end_p3 = std::chrono::high_resolution_clock::now();
 
     write_output(argv[2], min_dist, hit_time_step, gravity_device_id, missile_cost);
+
+    std::chrono::duration<double> p1_time = start_p2 - start_p1;
+    std::chrono::duration<double> p2_time = start_p3 - start_p2;
+    std::chrono::duration<double> p3_time = end_p3 - start_p3;
+    std::cout << " Problem 1 Time: " << p1_time.count() << " s" << std::endl;
+    std::cout << " Problem 2 Time: " << p2_time.count() << " s" << std::endl;
+    std::cout << " Problem 3 Time: " << p3_time.count() << " s" << std::endl;
 }
