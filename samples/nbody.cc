@@ -17,6 +17,7 @@ double gravity_device_mass(double m0, double t) {
     return m0 + 0.5 * m0 * fabs(sin(t / 6000));
 }
 const double planet_radius = 1e7;
+const double planet_radius2 = 1e7 * 1e7;
 const double missile_speed = 1e6;
 double get_missile_cost(double t) { return 1e5 + 1e3 * t; }
 }  // namespace param
@@ -108,21 +109,25 @@ int main(int argc, char** argv) {
     auto start_p1 = std::chrono::high_resolution_clock::now();
 
     double min_dist = std::numeric_limits<double>::infinity();
-    read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
-    for (int i = 0; i < n; i++) {
-        if (type[i] == "device") {
-            m[i] = 0;
-        }
-    }
-    for (int step = 0; step <= param::n_steps; step++) {
-        if (step > 0) {
-            run_step(step, n, qx, qy, qz, vx, vy, vz, m, type);
-        }
-        double dx = qx[planet] - qx[asteroid];
-        double dy = qy[planet] - qy[asteroid];
-        double dz = qz[planet] - qz[asteroid];
-        min_dist = std::min(min_dist, sqrt(dx * dx + dy * dy + dz * dz));
-    }
+    // read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
+    // for (int i = 0; i < n; i++) {
+    //     if (type[i] == "device") {
+    //         m[i] = 0;
+    //     }
+    // }
+    // for (int step = 0; step <= param::n_steps; step++) {
+    //     if (step > 0) {
+    //         run_step(step, n, qx, qy, qz, vx, vy, vz, m, type);
+    //     }
+    //     double dx = qx[planet] - qx[asteroid];
+    //     double dy = qy[planet] - qy[asteroid];
+    //     double dz = qz[planet] - qz[asteroid];
+    //     double dist = sqrt(dx * dx + dy * dy + dz * dz);
+    //     min_dist = std::min(min_dist, dist);
+
+    //     printf("%lf, ", dist);
+    // }
+    // printf("\n");
 
     // Problem 2
     auto start_p2 = std::chrono::high_resolution_clock::now();
@@ -136,11 +141,13 @@ int main(int argc, char** argv) {
         double dx = qx[planet] - qx[asteroid];
         double dy = qy[planet] - qy[asteroid];
         double dz = qz[planet] - qz[asteroid];
-        if (dx * dx + dy * dy + dz * dz < param::planet_radius * param::planet_radius) {
+        double d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < param::planet_radius2) {
             hit_time_step = step;
             break;
         }
     }
+    printf("\n");
 
     // Problem 3
     auto start_p3 = std::chrono::high_resolution_clock::now();
@@ -150,7 +157,7 @@ int main(int argc, char** argv) {
     int gravity_device_id = -1;
 
     // Iterate through all gravity devices
-    for (int device_id = 0; device_id < n; ++device_id) {
+    for (int device_id = 0; device_id < 0; ++device_id) {
         if (type[device_id] != "device") continue;
 
         // Backup initial state

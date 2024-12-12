@@ -1,4 +1,3 @@
-#include <hip/hip_runtime.h>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -8,7 +7,10 @@
 #include <vector>
 #include <chrono>
 #include <iostream>
+#include <cuda_runtime.h>
 
+
+#define MAX_BODY 4096
 #define BLOCK_SIZE 1024
 
 namespace param {
@@ -280,34 +282,32 @@ int main(int argc, char** argv) {
         h_vtype[i] = {vx[i], vy[i], vz[i], (type[i] == "device") ? 1.0 : 0.0};
     }
 
-    hipError_t err;
+    cudaError_t err;
     double4 *d_posw, *d_vtype, *d_acc;
     int *d_step, *d_n, *d_planet, *d_asteroid;
     double *d_min_dist;
 
-    // Allocate device memory
-    hipMalloc(&d_posw, n * sizeof(double4));
-    hipMalloc(&d_vtype, n * sizeof(double4));
-    hipMalloc(&d_step, sizeof(int));
-    hipMalloc(&d_n, sizeof(int));
-    hipMalloc(&d_planet, sizeof(int));
-    hipMalloc(&d_asteroid, sizeof(int));
-    hipMalloc(&d_min_dist, sizeof(double));
+    cudaMalloc(&d_posw, n * sizeof(double4));
+    cudaMalloc(&d_vtype, n * sizeof(double4));
+    cudaMalloc(&d_step, sizeof(int));
+    cudaMalloc(&d_n, sizeof(int));
+    cudaMalloc(&d_planet, sizeof(int));
+    cudaMalloc(&d_asteroid, sizeof(int));
+    cudaMalloc(&d_min_dist, sizeof(double));
 
     // Copy data from host to device
-    hipMemcpy(d_posw, h_posw, n * sizeof(double4), hipMemcpyHostToDevice);
-    hipMemcpy(d_vtype, h_vtype, n * sizeof(double4), hipMemcpyHostToDevice);
-    hipMemcpy(d_step, &h_step, sizeof(int), hipMemcpyHostToDevice);
-    hipMemcpy(d_n, &n, sizeof(int), hipMemcpyHostToDevice);
-    hipMemcpy(d_planet, &planet, sizeof(int), hipMemcpyHostToDevice);
-    hipMemcpy(d_asteroid, &asteroid, sizeof(int), hipMemcpyHostToDevice);
-    hipMemcpy(d_min_dist, &min_dist, sizeof(double), hipMemcpyHostToDevice);
+    cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_n, &n, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_planet, &planet, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_asteroid, &asteroid, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_min_dist, &min_dist, sizeof(double), cudaMemcpyHostToDevice);
 
-    err = hipGetLastError();
-    if (err != hipSuccess) {
-        fprintf(stderr, "hipMalloc error: %s\n", hipGetErrorString(err));
+    err = cudaGetLastError();
+    if (err != cudaSuccess){
+        fprintf(stderr, "cudaMalloc error: %s\n", cudaGetErrorString(err));
     }
-
     auto end_Memcpy = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> memcpy_time = end_Memcpy - start_p1;
     std::cout << " memcpy time: " << memcpy_time.count() << " s" << std::endl;
@@ -317,162 +317,168 @@ int main(int argc, char** argv) {
         blockSize <<= 1;
     }
     printf("blockSize: %d\n", blockSize);
-
     int shmem = blockSize * sizeof(double3);
     int gridSize = n;
 
-    // Launch the kernel
     for (int step = 0; step <= param::n_steps; step++) {
-        hipLaunchKernelGGL(problem1, dim3(gridSize), dim3(blockSize), shmem, 0, 
-                           d_step, d_n, d_planet, d_asteroid, 
-                           d_posw, d_vtype, d_min_dist);
+        problem1<<<gridSize, blockSize, shmem>>>(d_step, d_n, d_planet, d_asteroid, 
+                        d_posw, d_vtype, d_min_dist);
+    }
+    // cudaDeviceSynchronize();
+
+    err = cudaGetLastError();
+    if (err != cudaSuccess){
+        fprintf(stderr, "kernel1 error: %s\n", cudaGetErrorString(err));
     }
 
-    // Check for kernel errors
-    err = hipGetLastError();
-    if (err != hipSuccess) {
-        fprintf(stderr, "kernel1 error: %s\n", hipGetErrorString(err));
-    }
+    cudaMemcpy(&min_dist, d_min_dist, sizeof(double), cudaMemcpyDeviceToHost);
 
-    // Copy results back to host
-    hipMemcpy(&min_dist, d_min_dist, sizeof(double), hipMemcpyDeviceToHost);
+
 
     // Problem 2
     auto start_p2 = std::chrono::high_resolution_clock::now();
 
-    // int hit_time_step = -2;
-    // int *d_hit_time_step;
+    int hit_time_step = -2;
+    int *d_hit_time_step;
     
-    // cudaMalloc(&d_hit_time_step, sizeof(int));
-    // // Copy data from host to device
-    // cudaMemcpy(d_hit_time_step, &hit_time_step, sizeof(int), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMalloc(&d_hit_time_step, sizeof(int));
+    // Copy data from host to device
+    cudaMemcpy(d_hit_time_step, &hit_time_step, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
 
-    // for (int step = 0; step <= -1; step++) {
-    //     problem2<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
-    //                     d_posw, d_vtype, d_hit_time_step);
-    // }
-    // cudaDeviceSynchronize();
+    for (int step = 0; step <= param::n_steps; step++) {
+        problem2<<<gridSize, blockSize, shmem>>>(d_step, d_n, d_planet, d_asteroid, 
+                        d_posw, d_vtype, d_hit_time_step);
+    }
 
-    // err = cudaGetLastError();
-    // if (err != cudaSuccess){
-    //     fprintf(stderr, "kernel2 error: %s\n", cudaGetErrorString(err));
-    // }
+    err = cudaGetLastError();
+    if (err != cudaSuccess){
+        fprintf(stderr, "kernel2 error: %s\n", cudaGetErrorString(err));
+    }
 
-    // cudaMemcpy(&hit_time_step, d_hit_time_step, sizeof(int), cudaMemcpyDeviceToHost);
-
+    cudaMemcpy(&hit_time_step, d_hit_time_step, sizeof(int), cudaMemcpyDeviceToHost);
 
 
 
-    // // // Problem 3
-    // auto start_p3 = std::chrono::high_resolution_clock::now();
 
-    // // int best_step1 = 400000, best_step2 = 400000;
-    // int gravity_device_id = -1;
-    // bool collision_avoided1 = true, collision_avoided2 = true;
-    // bool device_destroyed1 = false, device_destroyed2 = false;
-    // int step_missile_hits1 = -1, step_missile_hits2 = -1;
-    // int device1 = n-2, device2 = n-1;
+    // // Problem 3
+    auto start_p3 = std::chrono::high_resolution_clock::now();
 
-    // bool *d_collision_avoided1, *d_collision_avoided2;
-    // bool *d_device_destroyed1, *d_device_destroyed2;
-    // int *d_step_missile_hits1, *d_step_missile_hits2;
-    // int *d_device1, *d_device2;
+    // int best_step1 = 400000, best_step2 = 400000;
+    int gravity_device_id = -1;
+    bool collision_avoided1 = true, collision_avoided2 = true;
+    bool device_destroyed1 = false, device_destroyed2 = false;
+    int step_missile_hits1 = -1, step_missile_hits2 = -1;
+    int device1 = n-2, device2 = n-1;
 
-    // cudaMalloc(&d_collision_avoided1, sizeof(bool));
-    // cudaMalloc(&d_collision_avoided2, sizeof(bool));
-    // cudaMalloc(&d_device_destroyed1, sizeof(bool));
-    // cudaMalloc(&d_device_destroyed2, sizeof(bool));
-    // cudaMalloc(&d_step_missile_hits1, sizeof(int));
-    // cudaMalloc(&d_step_missile_hits2, sizeof(int));
-    // cudaMalloc(&d_device1, sizeof(int));
-    // cudaMalloc(&d_device2, sizeof(int));
+    bool *d_collision_avoided1, *d_collision_avoided2;
+    bool *d_device_destroyed1, *d_device_destroyed2;
+    int *d_step_missile_hits1, *d_step_missile_hits2;
+    int *d_device1, *d_device2;
 
-    // // 1
-    // cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_device1, &device1, sizeof(int), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_device_destroyed1, &device_destroyed1, sizeof(bool), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_collision_avoided1, &collision_avoided1, sizeof(bool), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_step_missile_hits1, &step_missile_hits1, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMalloc(&d_collision_avoided1, sizeof(bool));
+    cudaMalloc(&d_collision_avoided2, sizeof(bool));
+    cudaMalloc(&d_device_destroyed1, sizeof(bool));
+    cudaMalloc(&d_device_destroyed2, sizeof(bool));
+    cudaMalloc(&d_step_missile_hits1, sizeof(int));
+    cudaMalloc(&d_step_missile_hits2, sizeof(int));
+    cudaMalloc(&d_device1, sizeof(int));
+    cudaMalloc(&d_device2, sizeof(int));
 
-    // for (int step = 0; step <= param::n_steps; ++step) {
-    //     problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
-    //                     d_posw, d_vtype, d_step_missile_hits1, d_device1, d_device_destroyed1, d_collision_avoided1);
-    // }
-    // cudaMemcpy(&device_destroyed1, d_device_destroyed1, sizeof(bool), cudaMemcpyDeviceToHost);
-    // cudaMemcpy(&collision_avoided1, d_collision_avoided1, sizeof(bool), cudaMemcpyDeviceToHost);
-    // cudaMemcpy(&step_missile_hits1, d_step_missile_hits1, sizeof(int), cudaMemcpyDeviceToHost);
+    // 1
+    cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_device1, &device1, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_device_destroyed1, &device_destroyed1, sizeof(bool), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_collision_avoided1, &collision_avoided1, sizeof(bool), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_step_missile_hits1, &step_missile_hits1, sizeof(int), cudaMemcpyHostToDevice);
+
+    for (int step = 0; step <= param::n_steps; ++step) {
+        problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
+                        d_posw, d_vtype, d_step_missile_hits1, d_device1, d_device_destroyed1, d_collision_avoided1);
+    }
+    cudaMemcpy(&device_destroyed1, d_device_destroyed1, sizeof(bool), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&collision_avoided1, d_collision_avoided1, sizeof(bool), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&step_missile_hits1, d_step_missile_hits1, sizeof(int), cudaMemcpyDeviceToHost);
 
 
-    // // 2
-    // cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_device2, &device2, sizeof(int), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_collision_avoided2, &collision_avoided2, sizeof(bool), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_device_destroyed2, &device_destroyed2, sizeof(bool), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_step_missile_hits2, &step_missile_hits2, sizeof(int), cudaMemcpyHostToDevice);
+    // 2
+    cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_device2, &device2, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_collision_avoided2, &collision_avoided2, sizeof(bool), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_device_destroyed2, &device_destroyed2, sizeof(bool), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_step_missile_hits2, &step_missile_hits2, sizeof(int), cudaMemcpyHostToDevice);
 
-    // for (int step = 0; step <= param::n_steps; ++step) {
-    //     problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
-    //                     d_posw, d_vtype, d_step_missile_hits2, d_device2, d_device_destroyed2, d_collision_avoided2);
-    // }
-    // cudaMemcpy(&device_destroyed2, d_device_destroyed2, sizeof(bool), cudaMemcpyDeviceToHost);
-    // cudaMemcpy(&collision_avoided2, d_collision_avoided2, sizeof(bool), cudaMemcpyDeviceToHost);
-    // cudaMemcpy(&step_missile_hits2, d_step_missile_hits2, sizeof(int), cudaMemcpyDeviceToHost);
+    for (int step = 0; step <= param::n_steps; ++step) {
+        problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
+                        d_posw, d_vtype, d_step_missile_hits2, d_device2, d_device_destroyed2, d_collision_avoided2);
+    }
+    cudaMemcpy(&device_destroyed2, d_device_destroyed2, sizeof(bool), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&collision_avoided2, d_collision_avoided2, sizeof(bool), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&step_missile_hits2, d_step_missile_hits2, sizeof(int), cudaMemcpyDeviceToHost);
     
 
-    // double missile_cost1 = (!collision_avoided1) ? 0 : param::get_missile_cost(step_missile_hits1 * param::dt);
-    // double missile_cost2 = (!collision_avoided2) ? 0 : param::get_missile_cost(step_missile_hits2 * param::dt);
-    // double missile_cost;
+    double missile_cost1 = (!collision_avoided1) ? 0 : param::get_missile_cost(step_missile_hits1 * param::dt);
+    double missile_cost2 = (!collision_avoided2) ? 0 : param::get_missile_cost(step_missile_hits2 * param::dt);
+    double missile_cost;
 
-    // if (!collision_avoided1 && !collision_avoided2) {
-    //     missile_cost = 0;
-    //     gravity_device_id = -1;
-    // }
-    // else if (!collision_avoided2) {
-    //     missile_cost = missile_cost1;
-    //     gravity_device_id = n-2;
-    // }
-    // else if (!collision_avoided1) {
-    //     missile_cost = missile_cost2;
-    //     gravity_device_id = n-1;
-    // }
-    // else {
-    //     if (missile_cost1 <= missile_cost2) {
-    //         missile_cost = missile_cost1;
-    //         gravity_device_id = n-2;
-    //     }
-    //     else{
-    //         missile_cost = missile_cost2;
-    //         gravity_device_id = n-1;
-    //     }
-    // }
+    if (!collision_avoided1 && !collision_avoided2) {
+        missile_cost = 0;
+        gravity_device_id = -1;
+    }
+    else if (!collision_avoided2) {
+        missile_cost = missile_cost1;
+        gravity_device_id = n-2;
+    }
+    else if (!collision_avoided1) {
+        missile_cost = missile_cost2;
+        gravity_device_id = n-1;
+    }
+    else {
+        if (missile_cost1 <= missile_cost2) {
+            missile_cost = missile_cost1;
+            gravity_device_id = n-2;
+        }
+        else{
+            missile_cost = missile_cost2;
+            gravity_device_id = n-1;
+        }
+    }
 
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
-    // write_output(argv[2], sqrt(min_dist), hit_time_step, gravity_device_id, missile_cost);
-    write_output(argv[2], min_dist, 0, 0, 0);
+    write_output(argv[2], sqrt(min_dist), hit_time_step, gravity_device_id, missile_cost);
+    // write_output(argv[2], min_dist, hit_time_step, 0, 0);
 
     std::chrono::duration<double> p1_time = start_p2 - start_p1;
-    // std::chrono::duration<double> p2_time = start_p3 - start_p2;
-    // std::chrono::duration<double> p3_time = end_p3 - start_p3;
+    std::chrono::duration<double> p2_time = start_p3 - start_p2;
+    std::chrono::duration<double> p3_time = end_p3 - start_p3;
     std::cout << " Problem 1 Time: " << p1_time.count() << " s" << std::endl;
-    // std::cout << " Problem 2 Time: " << p2_time.count() << " s" << std::endl;
-    // std::cout << " Problem 3 Time: " << p3_time.count() << " s" << std::endl;
+    std::cout << " Problem 2 Time: " << p2_time.count() << " s" << std::endl;
+    std::cout << " Problem 3 Time: " << p3_time.count() << " s" << std::endl;
 
     // Free allocated memory
-    hipFree(d_posw);
-    hipFree(d_vtype);
-    hipFree(d_step);
-    hipFree(d_n);
-    hipFree(d_planet);
-    hipFree(d_asteroid);
-    hipFree(d_min_dist);
+    cudaFree(d_posw);
+    cudaFree(d_vtype);
+    cudaFree(d_step);
+    cudaFree(d_n);
+    cudaFree(d_planet);
+    cudaFree(d_asteroid);
+    cudaFree(d_min_dist);
+    cudaFree(d_hit_time_step);
+    cudaFree(d_collision_avoided1);
+    cudaFree(d_collision_avoided2);
+    cudaFree(d_device_destroyed1);
+    cudaFree(d_device_destroyed2);
+    cudaFree(d_step_missile_hits1);
+    cudaFree(d_step_missile_hits2);
+    cudaFree(d_device1);
+    cudaFree(d_device2);
 
     free(h_posw);
     free(h_vtype);
