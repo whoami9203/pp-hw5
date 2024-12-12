@@ -76,6 +76,8 @@ __global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 
         dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
         if (dist.w < *min_dist)
             *min_dist = dist.w;
+        if (*step == param::n_step)
+            printf("%lf,  ", dist.w);
         *step += 1;
     }
 
@@ -455,7 +457,7 @@ int main(int argc, char** argv) {
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
     // write_output(argv[2], sqrt(min_dist), hit_time_step, gravity_device_id, missile_cost);
-    write_output(argv[2], min_dist, 0, 0, 0);
+    write_output(argv[2], sqrt(min_dist), 0, 0, 0);
 
     std::chrono::duration<double> p1_time = start_p2 - start_p1;
     // std::chrono::duration<double> p2_time = start_p3 - start_p2;
