@@ -76,7 +76,7 @@ __global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 
         dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
         if (dist.w < *min_dist)
             *min_dist = dist.w;
-        if (*step == param::n_step)
+        if (*step == param::n_steps)
             printf("%lf,  ", dist.w);
         *step += 1;
     }
