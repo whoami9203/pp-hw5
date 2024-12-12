@@ -323,9 +323,8 @@ int main(int argc, char** argv) {
 
     // Launch the kernel
     for (int step = 0; step <= param::n_steps; step++) {
-        hipLaunchKernelGGL(problem1, dim3(gridSize), dim3(blockSize), shmem, 0, 
-                           d_step, d_n, d_planet, d_asteroid, 
-                           d_posw, d_vtype, d_min_dist);
+        problem1<<<gridSize, blockSize, shmem>>>(d_step, d_n, d_planet, d_asteroid, 
+                        d_posw, d_vtype, d_min_dist);
     }
 
     // Check for kernel errors
