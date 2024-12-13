@@ -92,14 +92,20 @@ __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
         vtype[bid].x += acceleration[0].x * param::dt;
         vtype[bid].y += acceleration[0].y * param::dt;
         vtype[bid].z += acceleration[0].z * param::dt;
-        posw[bid].x += vtype[bid].x * param::dt;
-        posw[bid].y += vtype[bid].y * param::dt;
-        posw[bid].z += vtype[bid].z * param::dt;
+        // posw[bid].x += vtype[bid].x * param::dt;
+        // posw[bid].y += vtype[bid].y * param::dt;
+        // posw[bid].z += vtype[bid].z * param::dt;
     }
 }
-__global__ void update1(int *step, int *planet, int *asteroid, double4 *posw, 
+__global__ void update1(int *step, int *planet, int *asteroid, double4 *posw, double4 *vtype,
                         double *min_dist, int *min_step) {
-    if (threadIdx.x == 0) {
+    int tid = threadIdx.x;
+    posw[tid].x += vtype[tid].x * param::dt;
+    posw[tid].y += vtype[tid].y * param::dt;
+    posw[tid].z += vtype[tid].z * param::dt;
+    __syncthreads();
+    
+    if (tid == 0) {
         double4 dist;
         dist.x = posw[*planet].x - posw[*asteroid].x;
         dist.y = posw[*planet].y - posw[*asteroid].y;
@@ -319,8 +325,7 @@ int main(int argc, char** argv) {
 
     for (int step = 1; step <= param::n_steps; step++) {
         problem1<<<gridSize, blockSize, shmem>>>(d_n, d_posw, d_vtype);
-        hipDeviceSynchronize();
-        update1<<<1, 32>>>(d_step, d_planet, d_asteroid, d_posw, 
+        update1<<<1, n>>>(d_step, d_planet, d_asteroid, d_posw, d_vtype,
                             d_min_dist, d_min_step);
     }
 
