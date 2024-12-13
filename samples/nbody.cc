@@ -109,25 +109,25 @@ int main(int argc, char** argv) {
     auto start_p1 = std::chrono::high_resolution_clock::now();
 
     double min_dist = std::numeric_limits<double>::infinity();
-    // read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
-    // for (int i = 0; i < n; i++) {
-    //     if (type[i] == "device") {
-    //         m[i] = 0;
-    //     }
-    // }
-    // for (int step = 0; step <= param::n_steps; step++) {
-    //     if (step > 0) {
-    //         run_step(step, n, qx, qy, qz, vx, vy, vz, m, type);
-    //     }
-    //     double dx = qx[planet] - qx[asteroid];
-    //     double dy = qy[planet] - qy[asteroid];
-    //     double dz = qz[planet] - qz[asteroid];
-    //     double dist = sqrt(dx * dx + dy * dy + dz * dz);
-    //     min_dist = std::min(min_dist, dist);
+    read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
+    for (int i = 0; i < n; i++) {
+        if (type[i] == "device") {
+            m[i] = 0;
+        }
+    }
+    for (int step = 0; step <= param::n_steps; step++) {
+        if (step > 0) {
+            run_step(step, n, qx, qy, qz, vx, vy, vz, m, type);
+        }
+        double dx = qx[planet] - qx[asteroid];
+        double dy = qy[planet] - qy[asteroid];
+        double dz = qz[planet] - qz[asteroid];
+        double dist = sqrt(dx * dx + dy * dy + dz * dz);
+        min_dist = std::min(min_dist, dist);
 
-    //     printf("%lf, ", dist);
-    // }
-    // printf("\n");
+        printf("%lf, ", dist);
+    }
+    printf("\n");
 
     // Problem 2
     auto start_p2 = std::chrono::high_resolution_clock::now();

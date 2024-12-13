@@ -122,7 +122,9 @@ __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
         d.x = pos_j.x - pos_i.x;
         d.y = pos_j.y - pos_i.y;
         d.z = pos_j.z - pos_i.z;
-        double dist3 = pow(d.x * d.x + d.y * d.y + d.z * d.z + param::eps2, 1.5);
+        double dist2 = (d.x * d.x + d.y * d.y + d.z * d.z + param::eps2);
+        double dist6 = dist2 * dist2 * dist2;
+        double dist3 = sqrt(dist6);
         double mass = vtype[tid].w == 1 ? 0 : pos_j.w;
         double Gmd = param::G * mass / dist3;
         acceleration[tid] = {d.x * Gmd, d.y * Gmd, d.z * Gmd};
