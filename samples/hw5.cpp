@@ -372,7 +372,7 @@ int main(int argc, char** argv) {
 
 
     // // // Problem 3
-    // auto start_p3 = std::chrono::high_resolution_clock::now();
+    auto start_p3 = std::chrono::high_resolution_clock::now();
 
     int gravity_device_id = -1;
     bool collision_avoided1 = true, collision_avoided2 = true;
