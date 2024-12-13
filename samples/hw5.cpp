@@ -85,7 +85,7 @@ __global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 
     int bid = blockIdx.x;
     // calculate i-th body's acceleration
     acceleration[tid] = {0, 0, 0};
-    if (tid < *n) {
+    if (tid < *n && tid != bid) {
         double4 pos_i = posw[bid];
         double4 pos_j = posw[tid];
         double3 d;

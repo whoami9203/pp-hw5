@@ -421,7 +421,7 @@ int main(int argc, char** argv) {
     cudaMemcpy(d_device_destroyed2, &device_destroyed2, sizeof(bool), cudaMemcpyHostToDevice);
     cudaMemcpy(d_step_missile_hits2, &step_missile_hits2, sizeof(int), cudaMemcpyHostToDevice);
 
-    for (int step = 0; step <= param::n_steps; ++step) {
+    for (int step = 0; step <= -1; ++step) {
         problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
                         d_posw, d_vtype, d_step_missile_hits2, d_device2, d_device_destroyed2, d_collision_avoided2);
     }
