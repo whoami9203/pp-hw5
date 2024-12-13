@@ -98,7 +98,7 @@ __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
     }
 }
 __global__ void update1(int *step, int *planet, int *asteroid, double4 *posw, double4 *vtype,
-                        double *min_dist, int *min_step) {
+                        double *min_dist) {
     int tid = threadIdx.x;
     posw[tid].x += vtype[tid].x * param::dt;
     posw[tid].y += vtype[tid].y * param::dt;
@@ -112,7 +112,6 @@ __global__ void update1(int *step, int *planet, int *asteroid, double4 *posw, do
         dist.z = posw[*planet].z - posw[*asteroid].z;
         dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
         if (dist.w < *min_dist) {
-            *min_step = *step;
             *min_dist = dist.w;
         }
         *step += 1;
@@ -261,45 +260,16 @@ __global__ void update3(int *step, int *planet, int *asteroid, int *device, doub
     }
 }
 
-int main(int argc, char** argv) {
-    if (argc != 3) {
-        throw std::runtime_error("must supply 2 arguments");
-    }
-    int n, planet, asteroid;
-    std::vector<double> qx, qy, qz, vx, vy, vz, m;
-    std::vector<std::string> type;
-
-    auto distance2 = [&](int i, int j) -> double {
-        double dx = qx[i] - qx[j];
-        double dy = qy[i] - qy[j];
-        double dz = qz[i] - qz[j];
-        return (dx * dx + dy * dy + dz * dz);
-    };
-
-    // Problem 1
-    auto start_p1 = std::chrono::high_resolution_clock::now();
-
-    read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
-    double min_dist = distance2(planet, asteroid);
-
-    // Host variables
-    double4* h_posw = (double4*)malloc(n * sizeof(double4));
-    double4* h_vtype = (double4*)malloc(n * sizeof(double4));
-    int h_step = 1;
-
-    // Populate host data (e.g., position, velocity, mass, type)
-    // Combine qx, qy, qz, m into h_posw
-    // Combine vx, vy, vz, type into h_vtype
-    for (int i = 0; i < n; i++) {
-        h_posw[i] = {qx[i], qy[i], qz[i], m[i]};
-        h_vtype[i] = {vx[i], vy[i], vz[i], (type[i] == "device") ? 1.0 : 0.0};
-    }
+// Function to run problem2 on GPU 0
+void run_problem12( double4 *h_posw, double4 *h_vtype, 
+                    int h_step, int n, int gridSize, int blockSize, int shmem,
+                    int planet, int asteroid, double &min_dist, int &hit_time_step) {
+    hipSetDevice(0);  // Set GPU 0
 
     hipError_t err;
     double4 *d_posw, *d_vtype;
     int *d_step, *d_n, *d_planet, *d_asteroid;
     double *d_min_dist;
-    int *d_min_step;
 
     hipMalloc(&d_posw, n * sizeof(double4));
     hipMalloc(&d_vtype, n * sizeof(double4));
@@ -308,7 +278,6 @@ int main(int argc, char** argv) {
     hipMalloc(&d_planet, sizeof(int));
     hipMalloc(&d_asteroid, sizeof(int));
     hipMalloc(&d_min_dist, sizeof(double));
-    hipMalloc(&d_min_step, sizeof(int));
 
     // Copy data from host to device
     hipMemcpy(d_posw, h_posw, n * sizeof(double4), hipMemcpyHostToDevice);
@@ -318,43 +287,26 @@ int main(int argc, char** argv) {
     hipMemcpy(d_planet, &planet, sizeof(int), hipMemcpyHostToDevice);
     hipMemcpy(d_asteroid, &asteroid, sizeof(int), hipMemcpyHostToDevice);
     hipMemcpy(d_min_dist, &min_dist, sizeof(double), hipMemcpyHostToDevice);
-
     err = hipGetLastError();
     if (err != hipSuccess){
         fprintf(stderr, "hipMalloc error: %s\n", hipGetErrorString(err));
     }
-    auto end_Memcpy = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> memcpy_time = end_Memcpy - start_p1;
-    std::cout << " memcpy time: " << memcpy_time.count() << " s" << std::endl;
-
-    int blockSize = 1;
-    for (int i = 1; i < n; i <<= 1) {
-        blockSize <<= 1;
-    }
-    fprintf(stderr, "blockSize: %d\n", blockSize);
-    int shmem = blockSize * sizeof(double3);
-    int gridSize = n;
 
     for (int step = 1; step <= param::n_steps; step++) {
         problem1<<<gridSize, blockSize, shmem>>>(d_n, d_posw, d_vtype);
         update1<<<1, n>>>(d_step, d_planet, d_asteroid, d_posw, d_vtype,
-                            d_min_dist, d_min_step);
+                            d_min_dist);
     }
-
     err = hipGetLastError();
     if (err != hipSuccess){
         fprintf(stderr, "kernel1 error: %s\n", hipGetErrorString(err));
     }
 
-    int min_step;
-    hipMemcpy(&min_step, d_min_step, sizeof(int), hipMemcpyDeviceToHost);
     hipMemcpy(&min_dist, d_min_dist, sizeof(double), hipMemcpyDeviceToHost);
 
+    
 
     // Problem 2
-    auto start_p2 = std::chrono::high_resolution_clock::now();
-
-    int hit_time_step = -2;
     int *d_hit_time_step;
     
     hipMalloc(&d_hit_time_step, sizeof(int));
@@ -378,22 +330,44 @@ int main(int argc, char** argv) {
 
     hipMemcpy(&hit_time_step, d_hit_time_step, sizeof(int), hipMemcpyDeviceToHost);
 
+    // Free allocated memory
+    hipFree(d_posw);
+    hipFree(d_vtype);
+    hipFree(d_step);
+    hipFree(d_n);
+    hipFree(d_planet);
+    hipFree(d_asteroid);
+    hipFree(d_min_dist);
+    hipFree(d_hit_time_step);
+}
 
+// Function to run problem3 on GPU 1
+void run_problem3(  double4 *h_posw, double4 *h_vtype, 
+                    int h_step, int n, int gridSize, int blockSize, int shmem,
+                    int planet, int asteroid, int &gravity_device_id, int &best_step) {
+    hipSetDevice(1);  // Set GPU 1
 
+    // Problem 3
 
-    // // Problem 3
-    auto start_p3 = std::chrono::high_resolution_clock::now();
-
-    int gravity_device_id = -1;
-    int best_step = 400000;
-    
+    double4 *d_posw, *d_vtype;
+    int *d_step, *d_n, *d_planet, *d_asteroid;
     bool *d_collision_avoided;
     int *d_step_missile_hits;
     int *d_device;
 
+    hipMalloc(&d_posw, n * sizeof(double4));
+    hipMalloc(&d_vtype, n * sizeof(double4));
+    hipMalloc(&d_step, sizeof(int));
+    hipMalloc(&d_n, sizeof(int));
+    hipMalloc(&d_planet, sizeof(int));
+    hipMalloc(&d_asteroid, sizeof(int));
     hipMalloc(&d_collision_avoided, sizeof(bool));
     hipMalloc(&d_step_missile_hits, sizeof(int));
     hipMalloc(&d_device, sizeof(int));
+
+    hipMemcpy(d_n, &n, sizeof(int), hipMemcpyHostToDevice);
+    hipMemcpy(d_planet, &planet, sizeof(int), hipMemcpyHostToDevice);
+    hipMemcpy(d_asteroid, &asteroid, sizeof(int), hipMemcpyHostToDevice);
 
     for (int device_id = 0; device_id < n; ++device_id) {
         if (h_vtype[device_id].w == 0) continue;
@@ -424,37 +398,85 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Free allocated memory
+    hipFree(d_collision_avoided);
+    hipFree(d_step_missile_hits);
+    hipFree(d_device);
+}
+
+int main(int argc, char** argv) {
+    if (argc != 3) {
+        throw std::runtime_error("must supply 2 arguments");
+    }
+    int n, planet, asteroid;
+    std::vector<double> qx, qy, qz, vx, vy, vz, m;
+    std::vector<std::string> type;
+
+    auto distance2 = [&](int i, int j) -> double {
+        double dx = qx[i] - qx[j];
+        double dy = qy[i] - qy[j];
+        double dz = qz[i] - qz[j];
+        return (dx * dx + dy * dy + dz * dz);
+    };
+
+    auto start_all = std::chrono::high_resolution_clock::now();
+
+    read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
+
+    // kernel configuration
+    int blockSize = 1;
+    for (int i = 1; i < n; i <<= 1) {
+        blockSize <<= 1;
+    }
+    fprintf(stderr, "blockSize: %d\n", blockSize);
+    int shmem = blockSize * sizeof(double3);
+    int gridSize = n;
+
+    // Host variables
+    double4* h_posw = (double4*)malloc(n * sizeof(double4));
+    double4* h_vtype = (double4*)malloc(n * sizeof(double4));
+    int h_step = 1;
+
+    // variables to output
+    double min_dist = distance2(planet, asteroid);
+    int hit_time_step = -2;
+    int gravity_device_id = -1;
+    int best_step = 400000;
+
+    // Populate host data (e.g., position, velocity, mass, type)
+    // Combine qx, qy, qz, m into h_posw
+    // Combine vx, vy, vz, type into h_vtype
+    for (int i = 0; i < n; i++) {
+        h_posw[i] = {qx[i], qy[i], qz[i], m[i]};
+        h_vtype[i] = {vx[i], vy[i], vz[i], (type[i] == "device") ? 1.0 : 0.0};
+    }
+
+    // Launch threads for both problems
+    std::thread thread0(run_problem12,  h_posw, h_vtype,
+                                        h_step, n, gridSize, blockSize, shmem, 
+                                        planet, asteroid, std::ref(min_dist), std::ref(hit_time_step));
+    std::thread thread1(run_problem3,   h_posw, h_vtype,
+                                        h_step, n, gridSize, blockSize, shmem, 
+                                        planet, asteroid, std::ref(gravity_device_id), std::ref(best_step));
+
+    // Wait for threads to finish
+    thread0.join();
+    thread1.join();
+
     double missile_cost = gravity_device_id == -1 ? 0 : param::get_missile_cost(best_step * param::dt);;
 
     printf("step_missile_hits: %d\n", best_step);
     printf("missile_cost: %lf\n", missile_cost);
-    printf("min step: %d\n", min_step);
 
-    auto end_p3 = std::chrono::high_resolution_clock::now();
+    auto end_all = std::chrono::high_resolution_clock::now();
 
     write_output(argv[2], sqrt(min_dist), hit_time_step, gravity_device_id, missile_cost);
     // write_output(argv[2], min_dist, hit_time_step, 0, 0);
 
-    std::chrono::duration<double> p1_time = start_p2 - start_p1;
-    std::chrono::duration<double> p2_time = start_p3 - start_p2;
-    std::chrono::duration<double> p3_time = end_p3 - start_p3;
-    std::cout << " Problem 1 Time: " << p1_time.count() << " s" << std::endl;
-    std::cout << " Problem 2 Time: " << p2_time.count() << " s" << std::endl;
-    std::cout << " Problem 3 Time: " << p3_time.count() << " s" << std::endl;
+    std::chrono::duration<double> p1_time = end_all - start_all;
+    std::cout << " Program Time: " << p1_time.count() << " s" << std::endl;
 
     // Free allocated memory
-    hipFree(d_posw);
-    hipFree(d_vtype);
-    hipFree(d_step);
-    hipFree(d_n);
-    hipFree(d_planet);
-    hipFree(d_asteroid);
-    hipFree(d_min_dist);
-    hipFree(d_hit_time_step);
-    hipFree(d_collision_avoided);
-    hipFree(d_step_missile_hits);
-    hipFree(d_device);
-
     free(h_posw);
     free(h_vtype);
 }

@@ -106,6 +106,8 @@
     "streambuf": "cpp",
     "typeinfo": "cpp",
     "cstring": "cpp",
-    "thread": "cpp"
+    "thread": "cpp",
+    "condition_variable": "cpp",
+    "mutex": "cpp"
   }
 }
