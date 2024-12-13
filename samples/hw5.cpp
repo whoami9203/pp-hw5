@@ -319,6 +319,7 @@ int main(int argc, char** argv) {
 
     for (int step = 1; step <= param::n_steps; step++) {
         problem1<<<gridSize, blockSize, shmem>>>(d_n, d_posw, d_vtype);
+        hipDeviceSynchronize()
         update1<<<1, 32>>>(d_step, d_planet, d_asteroid, d_posw, 
                             d_min_dist, d_min_step);
     }
