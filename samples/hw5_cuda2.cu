@@ -73,8 +73,8 @@ __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
         double dist6 = dist2 * dist2 * dist2;
         double dist3 = sqrt(dist6);
         double mass = vtype[tid].w == 1 ? 0 : pos_j.w;
-        double Gmd = param::G * mass / dist3;
-        acceleration[tid] = {d.x * Gmd, d.y * Gmd, d.z * Gmd};
+        double Gmd = param::G * mass;
+        acceleration[tid] = {d.x * Gmd / dist3, d.y * Gmd / dist3, d.z * Gmd / dist3};
     }
     __syncthreads();
 
@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
     std::vector<double> qx, qy, qz, vx, vy, vz, m;
     std::vector<std::string> type;
 
-    auto distance = [&](int i, int j) -> double {
+    auto distance2 = [&](int i, int j) -> double {
         double dx = qx[i] - qx[j];
         double dy = qy[i] - qy[j];
         double dz = qz[i] - qz[j];
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
     auto start_p1 = std::chrono::high_resolution_clock::now();
 
     read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
-    double min_dist = distance(planet, asteroid);
+    double min_dist = distance2(planet, asteroid);
 
     // Host variables
     double4* h_posw = (double4*)malloc(n * sizeof(double4));
