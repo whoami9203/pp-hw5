@@ -157,14 +157,20 @@ __global__ void problem2(int *step, int *n, double4 *posw, double4 *vtype, int *
         vtype[bid].x += acceleration[0].x * param::dt;
         vtype[bid].y += acceleration[0].y * param::dt;
         vtype[bid].z += acceleration[0].z * param::dt;
-        posw[bid].x += vtype[bid].x * param::dt;
-        posw[bid].y += vtype[bid].y * param::dt;
-        posw[bid].z += vtype[bid].z * param::dt;
+        // posw[bid].x += vtype[bid].x * param::dt;
+        // posw[bid].y += vtype[bid].y * param::dt;
+        // posw[bid].z += vtype[bid].z * param::dt;
     }
     
 }
-__global__ void update2(int *step, int *planet, int *asteroid, double4 *posw, int *hit_time_step) {
-    if (threadIdx.x == 0 && *hit_time_step < 0) {
+__global__ void update2(int *step, int *planet, int *asteroid, double4 *posw, double4 *vtype, int *hit_time_step) {
+    int tid = threadIdx.x;
+    posw[tid].x += vtype[tid].x * param::dt;
+    posw[tid].y += vtype[tid].y * param::dt;
+    posw[tid].z += vtype[tid].z * param::dt;
+    __syncthreads();
+
+    if (tid == 0 && *hit_time_step < 0) {
         double4 dist;
         dist.x = posw[*planet].x - posw[*asteroid].x;
         dist.y = posw[*planet].y - posw[*asteroid].y;
@@ -215,14 +221,20 @@ __global__ void problem3(int *step, int *n, double4 *posw, double4 *vtype, bool 
         vtype[bid].x += acceleration[0].x * param::dt;
         vtype[bid].y += acceleration[0].y * param::dt;
         vtype[bid].z += acceleration[0].z * param::dt;
-        posw[bid].x += vtype[bid].x * param::dt;
-        posw[bid].y += vtype[bid].y * param::dt;
-        posw[bid].z += vtype[bid].z * param::dt;
+        // posw[bid].x += vtype[bid].x * param::dt;
+        // posw[bid].y += vtype[bid].y * param::dt;
+        // posw[bid].z += vtype[bid].z * param::dt;
     }
 }
-__global__ void update3(int *step, int *planet, int *asteroid, int *device, double4 *posw, 
+__global__ void update3(int *step, int *planet, int *asteroid, int *device, double4 *posw, double4 *vtype,
                         int *hit_time_step, bool *collision_avoided) {
-    if (threadIdx.x == 0 && collision_avoided) {
+    int tid = threadIdx.x;
+    posw[tid].x += vtype[tid].x * param::dt;
+    posw[tid].y += vtype[tid].y * param::dt;
+    posw[tid].z += vtype[tid].z * param::dt;
+    __syncthreads();
+    
+    if (tid == 0 && collision_avoided) {
         if (*hit_time_step < 0) {
             double4 dist;
             dist.x = posw[*planet].x - posw[*device].x;
@@ -257,7 +269,7 @@ int main(int argc, char** argv) {
     std::vector<double> qx, qy, qz, vx, vy, vz, m;
     std::vector<std::string> type;
 
-    auto distance = [&](int i, int j) -> double {
+    auto distance2 = [&](int i, int j) -> double {
         double dx = qx[i] - qx[j];
         double dy = qy[i] - qy[j];
         double dz = qz[i] - qz[j];
@@ -268,7 +280,7 @@ int main(int argc, char** argv) {
     auto start_p1 = std::chrono::high_resolution_clock::now();
 
     read_input(argv[1], n, planet, asteroid, qx, qy, qz, vx, vy, vz, m, type);
-    double min_dist = distance(planet, asteroid);
+    double min_dist = distance2(planet, asteroid);
 
     // Host variables
     double4* h_posw = (double4*)malloc(n * sizeof(double4));
@@ -355,8 +367,8 @@ int main(int argc, char** argv) {
     for (int step = 1; step <= param::n_steps; step++) {
         problem2<<<gridSize, blockSize, shmem>>>(
             d_step, d_n, d_posw, d_vtype, d_hit_time_step);
-        update2<<<1, 32>>>(
-            d_step, d_planet, d_asteroid, d_posw, d_hit_time_step);
+        update2<<<1, n>>>(
+            d_step, d_planet, d_asteroid, d_posw, d_vtype, d_hit_time_step);
     }
 
     err = hipGetLastError();
@@ -399,8 +411,8 @@ int main(int argc, char** argv) {
         for (int step = 1; step <= param::n_steps; ++step) {
             problem3<<<gridSize, blockSize, shmem>>>(
                 d_step, d_n, d_posw, d_vtype, d_collision_avoided);
-            update3<<<1, 32>>>(
-                d_step, d_planet, d_asteroid, d_device, d_posw, 
+            update3<<<1, n>>>(
+                d_step, d_planet, d_asteroid, d_device, d_posw, d_vtype,
                 d_step_missile_hits, d_collision_avoided);
         }
         hipMemcpy(&collision_avoided, d_collision_avoided, sizeof(bool), hipMemcpyDeviceToHost);
