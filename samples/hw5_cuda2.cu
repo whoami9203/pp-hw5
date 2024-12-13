@@ -73,8 +73,10 @@ __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
         double dist6 = dist2 * dist2 * dist2;
         double dist3 = sqrt(dist6);
         double mass = vtype[tid].w == 1 ? 0 : pos_j.w;
-        double Gmd = param::G * mass;
-        acceleration[tid] = {d.x * Gmd / dist3, d.y * Gmd / dist3, d.z * Gmd / dist3};
+        // double Gmd = param::G * mass;
+        acceleration[tid] = {param::G * mass * d.x / dist3, 
+                             param::G * mass * d.y / dist3, 
+                             param::G * mass * d.z / dist3};
     }
     __syncthreads();
 
