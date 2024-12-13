@@ -87,7 +87,7 @@ __global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 
     int bid = blockIdx.x;
     // calculate i-th body's acceleration
     acceleration[tid] = {0, 0, 0};
-    if (tid < *n) {
+    if (tid < *n && tid != bid) {
         double4 pos_i = posw[bid];
         double4 pos_j = posw[tid];
         double3 d;
@@ -355,7 +355,7 @@ int main(int argc, char** argv) {
     cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
     cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
 
-    for (int step = 0; step <= -1; step++) {
+    for (int step = 0; step <= param::n_steps; step++) {
         problem2<<<gridSize, blockSize, shmem>>>(d_step, d_n, d_planet, d_asteroid, 
                         d_posw, d_vtype, d_hit_time_step);
     }
@@ -373,7 +373,6 @@ int main(int argc, char** argv) {
     // // Problem 3
     auto start_p3 = std::chrono::high_resolution_clock::now();
 
-    // int best_step1 = 400000, best_step2 = 400000;
     int gravity_device_id = -1;
     bool collision_avoided1 = true, collision_avoided2 = true;
     bool device_destroyed1 = false, device_destroyed2 = false;
@@ -403,7 +402,7 @@ int main(int argc, char** argv) {
     cudaMemcpy(d_collision_avoided1, &collision_avoided1, sizeof(bool), cudaMemcpyHostToDevice);
     cudaMemcpy(d_step_missile_hits1, &step_missile_hits1, sizeof(int), cudaMemcpyHostToDevice);
 
-    for (int step = 0; step <= -1; ++step) {
+    for (int step = 0; step <= param::n_steps; ++step) {
         problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
                         d_posw, d_vtype, d_step_missile_hits1, d_device1, d_device_destroyed1, d_collision_avoided1);
     }
@@ -421,7 +420,7 @@ int main(int argc, char** argv) {
     cudaMemcpy(d_device_destroyed2, &device_destroyed2, sizeof(bool), cudaMemcpyHostToDevice);
     cudaMemcpy(d_step_missile_hits2, &step_missile_hits2, sizeof(int), cudaMemcpyHostToDevice);
 
-    for (int step = 0; step <= -1; ++step) {
+    for (int step = 0; step <= param::n_steps; ++step) {
         problem3<<<gridSize, blockSize>>>(d_step, d_n, d_planet, d_asteroid, 
                         d_posw, d_vtype, d_step_missile_hits2, d_device2, d_device_destroyed2, d_collision_avoided2);
     }
@@ -459,7 +458,7 @@ int main(int argc, char** argv) {
 
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
-    write_output(argv[2], sqrt(min_dist), min_step, gravity_device_id, missile_cost);
+    write_output(argv[2], sqrt(min_dist), min_dist, gravity_device_id, missile_cost);
     // write_output(argv[2], min_dist, hit_time_step, 0, 0);
 
     std::chrono::duration<double> p1_time = start_p2 - start_p1;
