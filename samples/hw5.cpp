@@ -65,7 +65,7 @@ __global__ void updatePosition(double4 *posw, double4 *vtype, double4* acc) {
     }
 }
 
-__global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 *posw, double4 *vtype, double *min_dist) {
+__global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 *posw, double4 *vtype, double *min_dist, int *min_step) {
     extern __shared__ double3 acceleration[];
 
     if (blockIdx.x == 0 && threadIdx.x == 0) {
@@ -74,8 +74,10 @@ __global__ void problem1(int *step, int *n, int *planet, int *asteroid, double4 
         dist.y = posw[*planet].y - posw[*asteroid].y;
         dist.z = posw[*planet].z - posw[*asteroid].z;
         dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
-        if (dist.w < *min_dist)
+        if (dist.w < *min_dist) {
             *min_dist = dist.w;
+            *min_step = *step;
+        }
         *step += 1;
     }
 
@@ -284,6 +286,7 @@ int main(int argc, char** argv) {
     double4 *d_posw, *d_vtype, *d_acc;
     int *d_step, *d_n, *d_planet, *d_asteroid;
     double *d_min_dist;
+    int *d_min_step;
 
     // Allocate device memory
     hipMalloc(&d_posw, n * sizeof(double4));
@@ -293,6 +296,7 @@ int main(int argc, char** argv) {
     hipMalloc(&d_planet, sizeof(int));
     hipMalloc(&d_asteroid, sizeof(int));
     hipMalloc(&d_min_dist, sizeof(double));
+    hipMalloc(&d_min_step, sizeof(int));
 
     // Copy data from host to device
     hipMemcpy(d_posw, h_posw, n * sizeof(double4), hipMemcpyHostToDevice);
@@ -324,7 +328,7 @@ int main(int argc, char** argv) {
     // Launch the kernel
     for (int step = 0; step <= param::n_steps; step++) {
         problem1<<<gridSize, blockSize, shmem>>>(d_step, d_n, d_planet, d_asteroid, 
-                        d_posw, d_vtype, d_min_dist);
+                        d_posw, d_vtype, d_min_dist, d_min_step);
     }
 
     // Check for kernel errors
@@ -333,8 +337,11 @@ int main(int argc, char** argv) {
         fprintf(stderr, "kernel1 error: %s\n", hipGetErrorString(err));
     }
 
+    int min_step;
+
     // Copy results back to host
     hipMemcpy(&min_dist, d_min_dist, sizeof(double), hipMemcpyDeviceToHost);
+    hipMemcpy(&min_step, d_min_step, sizeof(int), hipMemcpyDeviceToHost);
 
     // Problem 2
     auto start_p2 = std::chrono::high_resolution_clock::now();
@@ -455,7 +462,7 @@ int main(int argc, char** argv) {
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
     // write_output(argv[2], sqrt(min_dist), hit_time_step, gravity_device_id, missile_cost);
-    write_output(argv[2], sqrt(min_dist), 0, 0, 0);
+    write_output(argv[2], sqrt(min_dist), min_step, 0, 0);
 
     std::chrono::duration<double> p1_time = start_p2 - start_p1;
     // std::chrono::duration<double> p2_time = start_p3 - start_p2;
