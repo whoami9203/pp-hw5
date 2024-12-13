@@ -55,61 +55,6 @@ void write_output(const char* filename, double min_dist, int hit_time_step,
          << gravity_device_id << ' ' << missile_cost << '\n';
 }
 
-__global__ void update1(int *step, int *planet, int *asteroid, double4 *posw, double *min_dist) {
-    if (threadIdx.x == 0) {
-        double4 dist;
-        dist.x = posw[*planet].x - posw[*asteroid].x;
-        dist.y = posw[*planet].y - posw[*asteroid].y;
-        dist.z = posw[*planet].z - posw[*asteroid].z;
-        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
-        if (dist.w < *min_dist) {
-            *min_dist = dist.w;
-        }
-        *step += 1;
-    }
-}
-__global__ void update2(int *step, int *planet, int *asteroid, double4 *posw, int *hit_time_step) {
-    if (threadIdx.x == 0 && *hit_time_step < 0) {
-        double4 dist;
-        dist.x = posw[*planet].x - posw[*asteroid].x;
-        dist.y = posw[*planet].y - posw[*asteroid].y;
-        dist.z = posw[*planet].z - posw[*asteroid].z;
-        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
-        if (dist.w < param::planet_radius2) {
-            *hit_time_step = *step;
-        }
-        *step += 1;
-    }
-}
-__global__ void update3(int *step, int *planet, int *asteroid, int *device, double4 *posw, 
-                        int *hit_time_step, bool *collision_avoided) {
-    if (threadIdx.x == 0 && collision_avoided) {
-        if (*hit_time_step < 0) {
-            double4 dist;
-            dist.x = posw[*planet].x - posw[*device].x;
-            dist.y = posw[*planet].y - posw[*device].y;
-            dist.z = posw[*planet].z - posw[*device].z;
-            dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
-            double missile_distance = (*step) * param::dt * param::missile_speed;
-            if (dist.w < missile_distance * missile_distance) {
-                *hit_time_step = *step;
-                posw[*device].w = 0;
-            }
-        }
-
-        double4 dist;
-        dist.x = posw[*planet].x - posw[*asteroid].x;
-        dist.y = posw[*planet].y - posw[*asteroid].y;
-        dist.z = posw[*planet].z - posw[*asteroid].z;
-        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
-        if (dist.w < param::planet_radius2) {
-            *collision_avoided = false;
-        }
-        
-        *step += 1;
-    }
-}
-
 __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
     extern __shared__ double3 acceleration[];
 
@@ -150,6 +95,21 @@ __global__ void problem1(int *n, double4 *posw, double4 *vtype) {
         posw[bid].x += vtype[bid].x * param::dt;
         posw[bid].y += vtype[bid].y * param::dt;
         posw[bid].z += vtype[bid].z * param::dt;
+    }
+}
+__global__ void update1(int *step, int *planet, int *asteroid, double4 *posw, 
+                        double *min_dist, int *min_step) {
+    if (threadIdx.x == 0) {
+        double4 dist;
+        dist.x = posw[*planet].x - posw[*asteroid].x;
+        dist.y = posw[*planet].y - posw[*asteroid].y;
+        dist.z = posw[*planet].z - posw[*asteroid].z;
+        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
+        if (dist.w < *min_dist) {
+            *min_step = *step;
+            *min_dist = dist.w;
+        }
+        *step += 1;
     }
 }
 __global__ void problem2(int *step, int *n, double4 *posw, double4 *vtype, int *hit_time_step) {
@@ -197,6 +157,19 @@ __global__ void problem2(int *step, int *n, double4 *posw, double4 *vtype, int *
     }
     
 }
+__global__ void update2(int *step, int *planet, int *asteroid, double4 *posw, int *hit_time_step) {
+    if (threadIdx.x == 0 && *hit_time_step < 0) {
+        double4 dist;
+        dist.x = posw[*planet].x - posw[*asteroid].x;
+        dist.y = posw[*planet].y - posw[*asteroid].y;
+        dist.z = posw[*planet].z - posw[*asteroid].z;
+        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
+        if (dist.w < param::planet_radius2) {
+            *hit_time_step = *step;
+        }
+        *step += 1;
+    }
+}
 __global__ void problem3(int *step, int *n, double4 *posw, double4 *vtype, bool *collision_avoided) {
     extern __shared__ double3 acceleration[];
 
@@ -239,6 +212,34 @@ __global__ void problem3(int *step, int *n, double4 *posw, double4 *vtype, bool 
         posw[bid].x += vtype[bid].x * param::dt;
         posw[bid].y += vtype[bid].y * param::dt;
         posw[bid].z += vtype[bid].z * param::dt;
+    }
+}
+__global__ void update3(int *step, int *planet, int *asteroid, int *device, double4 *posw, 
+                        int *hit_time_step, bool *collision_avoided) {
+    if (threadIdx.x == 0 && collision_avoided) {
+        if (*hit_time_step < 0) {
+            double4 dist;
+            dist.x = posw[*planet].x - posw[*device].x;
+            dist.y = posw[*planet].y - posw[*device].y;
+            dist.z = posw[*planet].z - posw[*device].z;
+            dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
+            double missile_distance = (*step) * param::dt * param::missile_speed;
+            if (dist.w < missile_distance * missile_distance) {
+                *hit_time_step = *step;
+                posw[*device].w = 0;
+            }
+        }
+
+        double4 dist;
+        dist.x = posw[*planet].x - posw[*asteroid].x;
+        dist.y = posw[*planet].y - posw[*asteroid].y;
+        dist.z = posw[*planet].z - posw[*asteroid].z;
+        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
+        if (dist.w < param::planet_radius2) {
+            *collision_avoided = false;
+        }
+        
+        *step += 1;
     }
 }
 
@@ -318,7 +319,8 @@ int main(int argc, char** argv) {
 
     for (int step = 1; step <= param::n_steps; step++) {
         problem1<<<gridSize, blockSize, shmem>>>(d_n, d_posw, d_vtype);
-        update1<<<1, 32>>>(d_step, d_planet, d_asteroid, d_posw, d_min_dist);
+        update1<<<1, 32>>>(d_step, d_planet, d_asteroid, d_posw, 
+                            d_min_dist, d_min_step);
     }
 
     err = cudaGetLastError();
@@ -326,8 +328,9 @@ int main(int argc, char** argv) {
         fprintf(stderr, "kernel1 error: %s\n", cudaGetErrorString(err));
     }
 
+    int min_step;
+    cudaMemcpy(&min_step, d_min_step, sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(&min_dist, d_min_dist, sizeof(double), cudaMemcpyDeviceToHost);
-
 
 
     // Problem 2
@@ -407,6 +410,7 @@ int main(int argc, char** argv) {
 
     printf("step_missile_hits: %d\n", best_step);
     printf("missile_cost: %lf\n", missile_cost);
+    printf("min step: %d\n", min_step);
 
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
