@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
     int gravity_device_id = -1;
 
     // Iterate through all gravity devices
-    for (int device_id = 0; device_id < 0; ++device_id) {
+    for (int device_id = 0; device_id < n; ++device_id) {
         if (type[device_id] != "device") continue;
 
         // Backup initial state
@@ -225,6 +225,8 @@ int main(int argc, char** argv) {
             best_step = step_missile_hits;
             gravity_device_id = device_id;
         }
+
+        printf("step_missile_hits: %d\n", step_missile_hits);
     }
 
     double missile_cost = (gravity_device_id == -1) ? 0 : param::get_missile_cost(best_step * param::dt);

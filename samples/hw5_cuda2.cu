@@ -83,7 +83,7 @@ __global__ void update2(int *step, int *planet, int *asteroid, double4 *posw, in
 }
 __global__ void update3(int *step, int *planet, int *asteroid, int *device, double4 *posw, 
                         int *hit_time_step, bool *collision_avoided) {
-    if (threadIdx.x == 0) {
+    if (threadIdx.x == 0 && collision_avoided) {
         if (*hit_time_step < 0) {
             double4 dist;
             dist.x = posw[*planet].x - posw[*device].x;
@@ -96,16 +96,16 @@ __global__ void update3(int *step, int *planet, int *asteroid, int *device, doub
                 posw[*device].w = 0;
             }
         }
-        else {
-            double4 dist;
-            dist.x = posw[*planet].x - posw[*asteroid].x;
-            dist.y = posw[*planet].y - posw[*asteroid].y;
-            dist.z = posw[*planet].z - posw[*asteroid].z;
-            dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
-            if (dist.w < param::planet_radius2) {
-                *collision_avoided = false;
-            }
+
+        double4 dist;
+        dist.x = posw[*planet].x - posw[*asteroid].x;
+        dist.y = posw[*planet].y - posw[*asteroid].y;
+        dist.z = posw[*planet].z - posw[*asteroid].z;
+        dist.w = dist.x * dist.x + dist.y * dist.y + dist.z * dist.z;
+        if (dist.w < param::planet_radius2) {
+            *collision_avoided = false;
         }
+        
         *step += 1;
     }
 }
@@ -310,7 +310,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < n; i <<= 1) {
         blockSize <<= 1;
     }
-    printf("blockSize: %d\n", blockSize);
+    fprintf(stderr, "blockSize: %d\n", blockSize);
     int shmem = blockSize * sizeof(double3);
     int gridSize = n;
 
@@ -363,85 +363,49 @@ int main(int argc, char** argv) {
     auto start_p3 = std::chrono::high_resolution_clock::now();
 
     int gravity_device_id = -1;
-    bool collision_avoided1 = true, collision_avoided2 = true;
-    int step_missile_hits1 = -1, step_missile_hits2 = -1;
-    int device1 = n-2, device2 = n-1;
-
-    bool *d_collision_avoided1, *d_collision_avoided2;
-    int *d_step_missile_hits1, *d_step_missile_hits2;
-    int *d_device1, *d_device2;
-
-    cudaMalloc(&d_collision_avoided1, sizeof(bool));
-    cudaMalloc(&d_collision_avoided2, sizeof(bool));
-    cudaMalloc(&d_step_missile_hits1, sizeof(int));
-    cudaMalloc(&d_step_missile_hits2, sizeof(int));
-    cudaMalloc(&d_device1, sizeof(int));
-    cudaMalloc(&d_device2, sizeof(int));
-
-    // 1
-    cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_device1, &device1, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_collision_avoided1, &collision_avoided1, sizeof(bool), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_step_missile_hits1, &step_missile_hits1, sizeof(int), cudaMemcpyHostToDevice);
-
-    for (int step = 1; step <= param::n_steps; ++step) {
-        problem3<<<gridSize, blockSize, shmem>>>(
-            d_step, d_n, d_posw, d_vtype, d_collision_avoided1);
-        update3<<<1, 32>>>(
-            d_step, d_planet, d_asteroid, d_device1, d_posw, 
-            d_step_missile_hits1, d_collision_avoided1);
-    }
-    cudaMemcpy(&collision_avoided1, d_collision_avoided1, sizeof(bool), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&step_missile_hits1, d_step_missile_hits1, sizeof(int), cudaMemcpyDeviceToHost);
-
-
-    // 2
-    cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_device2, &device2, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_collision_avoided2, &collision_avoided2, sizeof(bool), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_step_missile_hits2, &step_missile_hits2, sizeof(int), cudaMemcpyHostToDevice);
-
-    for (int step = 1; step <= param::n_steps; ++step) {
-        problem3<<<gridSize, blockSize, shmem>>>(
-            d_step, d_n, d_posw, d_vtype, d_collision_avoided2);
-        update3<<<1, 32>>>(
-            d_step, d_planet, d_asteroid, d_device2, d_posw, 
-            d_step_missile_hits2, d_collision_avoided2);
-    }
-    cudaMemcpy(&collision_avoided2, d_collision_avoided2, sizeof(bool), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&step_missile_hits2, d_step_missile_hits2, sizeof(int), cudaMemcpyDeviceToHost);
+    int best_step = 400000;
     
+    bool *d_collision_avoided;
+    int *d_step_missile_hits;
+    int *d_device;
 
-    double missile_cost1 = (!collision_avoided1) ? 0 : param::get_missile_cost(step_missile_hits1 * param::dt);
-    double missile_cost2 = (!collision_avoided2) ? 0 : param::get_missile_cost(step_missile_hits2 * param::dt);
-    double missile_cost;
+    cudaMalloc(&d_collision_avoided, sizeof(bool));
+    cudaMalloc(&d_step_missile_hits, sizeof(int));
+    cudaMalloc(&d_device, sizeof(int));
 
-    if (!collision_avoided1 && !collision_avoided2) {
-        missile_cost = 0;
-        gravity_device_id = -1;
-    }
-    else if (!collision_avoided2) {
-        missile_cost = missile_cost1;
-        gravity_device_id = n-2;
-    }
-    else if (!collision_avoided1) {
-        missile_cost = missile_cost2;
-        gravity_device_id = n-1;
-    }
-    else {
-        if (missile_cost1 <= missile_cost2) {
-            missile_cost = missile_cost1;
-            gravity_device_id = n-2;
+    for (int device_id = 0; device_id < n; ++device_id) {
+        if (h_vtype[device_id].w == 0) continue;
+
+        bool collision_avoided = true;
+        int step_missile_hits = -1;
+
+        cudaMemcpy(d_posw, h_posw, n * sizeof(double4), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_vtype, h_vtype, n * sizeof(double4), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_step, &h_step, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_device, &device_id, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_collision_avoided, &collision_avoided, sizeof(bool), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_step_missile_hits, &step_missile_hits, sizeof(int), cudaMemcpyHostToDevice);
+
+        for (int step = 1; step <= param::n_steps; ++step) {
+            problem3<<<gridSize, blockSize, shmem>>>(
+                d_step, d_n, d_posw, d_vtype, d_collision_avoided);
+            update3<<<1, 32>>>(
+                d_step, d_planet, d_asteroid, d_device, d_posw, 
+                d_step_missile_hits, d_collision_avoided);
         }
-        else{
-            missile_cost = missile_cost2;
-            gravity_device_id = n-1;
+        cudaMemcpy(&collision_avoided, d_collision_avoided, sizeof(bool), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&step_missile_hits, d_step_missile_hits, sizeof(int), cudaMemcpyDeviceToHost);
+
+        if (collision_avoided && step_missile_hits < best_step) {
+            best_step = step_missile_hits;
+            gravity_device_id = device_id;
         }
     }
+
+    double missile_cost = gravity_device_id == -1 ? 0 : param::get_missile_cost(best_step * param::dt);;
+
+    printf("step_missile_hits: %d\n", best_step);
+    printf("missile_cost: %lf\n", missile_cost);
 
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
@@ -464,12 +428,9 @@ int main(int argc, char** argv) {
     cudaFree(d_asteroid);
     cudaFree(d_min_dist);
     cudaFree(d_hit_time_step);
-    cudaFree(d_collision_avoided1);
-    cudaFree(d_collision_avoided2);
-    cudaFree(d_step_missile_hits1);
-    cudaFree(d_step_missile_hits2);
-    cudaFree(d_device1);
-    cudaFree(d_device2);
+    cudaFree(d_collision_avoided);
+    cudaFree(d_step_missile_hits);
+    cudaFree(d_device);
 
     free(h_posw);
     free(h_vtype);
