@@ -408,6 +408,7 @@ int main(int argc, char** argv) {
 
     printf("step_missile_hits: %d\n", best_step);
     printf("missile_cost: %lf\n", missile_cost);
+    printf("min step: %d\n", min_step);
 
     auto end_p3 = std::chrono::high_resolution_clock::now();
 
